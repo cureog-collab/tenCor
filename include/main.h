@@ -40,7 +40,7 @@ void tensorRandomNormal(tensor *ten, double mean, double sigma);
 // =========================================================================================================
 void tensorScale(tensor *ten, double scalar);
 tensor *tensorAdd(const tensor *ten1, const tensor *ten2, bool isAdd);
-tensor *tensorAddBias(const tensor *ten, const tensor *bias); // TODO
+tensor *tensorAddBias(const tensor *ten, const tensor *bias); // idk if I should implement this
 tensor *tensorHadamardProduct(const tensor *ten1, const tensor *ten2);
 tensor *tensorDivide(const tensor *ten1, const tensor *ten2);
 
