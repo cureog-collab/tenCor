@@ -1,4 +1,5 @@
 #include "../include/tenCor.h"
+#include <stdlib.h>
 
 void tensorScale(tensor *ten, double scalar)
 {
@@ -514,7 +515,176 @@ tensor *tensorSoftmax(const tensor *ten, int axis)
     return result;
 }
 
-// helper
+bool tensorAddBiasInPlace(tensor *ten, const tensor *bias)
+{
+    if (ten == NULL || bias == NULL)
+    {
+        printf("Error: Cannot perform tensorAddBias with NULL!\n");
+        return false;
+    }
+    else if (bias->dimensions != 1)
+    {
+        printf("Error: Bias must be a vector (currently it is a rank-%i tensor).", bias->dimensions);
+        return false;
+    }
+    else if (bias->shape[0] != ten->shape[ten->dimensions - 1])
+    {
+        printf("Error: Last dimensions of input tensor and bias vector must have the same number of elements!\n");
+        return false;
+    }
+
+    int tenSize = ten->size;
+    int biasSize = bias->size;
+
+    // divide the 1D RAM data into contiguous blocks of biasSize
+    int numBlocks = tenSize / biasSize;
+
+    // jump into each block
+    for (int blockIdx = 0; blockIdx < numBlocks; ++blockIdx)
+    {
+        // address of the block
+        int blockOffset = blockIdx * biasSize;
+
+        // loop inside that block
+        for (int i = 0; i < biasSize; ++i)
+        {
+            *(ten->data + blockOffset + i) += *(bias->data + i);
+        }
+    }
+
+    return true;
+}
+
+void tensorReluInPlace(tensor *ten)
+{
+    for (int i = 0; i < ten->size; ++i)
+    {
+        ten->data[i] = (ten->data[i] > 0) ? ten->data[i] : 0;
+    }
+}
+
+void tensorSigmoidInPlace(tensor *ten)
+{
+    for (int i = 0; i < ten->size; ++i)
+    {
+        ten->data[i] = 1.0 / (1 + exp(-ten->data[i]));
+    }
+}
+
+void tensorTanhInPlace(tensor *ten)
+{
+    for (int i = 0; i < ten->size; ++i)
+    {
+        ten->data[i] = tanh(ten->data[i]);
+    }
+}
+
+bool tensorSoftmaxInPlace(tensor *ten, int axis)
+{
+    if (ten == NULL)
+    {
+        printf("Error: Input tensor is NULL!\n");
+        return false;
+    }
+
+    if (axis < 0 || axis >= ten->dimensions)
+    {
+        printf("Error: Axis %i is not a valid axis!\n", axis);
+        return false;
+    }
+
+    int dims = ten->dimensions;
+
+    tensor *result = createTensor(dims, ten->shape);
+    if (result == NULL)
+    {
+        printf("Error: Failed to create result tensor!\n");
+        return false;
+    }
+
+    // find sizes to later detect elements on axis
+    int axisSize = ten->shape[axis];
+    int innerSize = 1;
+    for (int d = axis + 1; d < dims; ++d)
+    {
+        innerSize *= ten->shape[d];
+    }
+    int outerSize = ten->size / (axisSize * innerSize);
+
+    // jump through outer axes
+    for (int i = 0; i < outerSize; ++i)
+    {
+        // jump though inner axes
+        for (int j = 0; j < innerSize; ++j)
+        {
+            int baseIdx = i * axisSize * innerSize + j;
+
+            // first loop inside axis: find maxVal
+            double maxVal = ten->data[baseIdx];
+            for (int k = 1; k < axisSize; ++k)
+            {
+                int currIdx = baseIdx + k * innerSize;
+                maxVal = (ten->data[currIdx] > maxVal) ? ten->data[currIdx] : maxVal;
+            }
+
+            // second loop inside axis: compute exp(value - maxVal) & compute sum of all exp(value - maxVal)
+            double partitionFuncion = 0.0;
+            for (int k = 0; k < axisSize; ++k)
+            {
+                int currIdx = baseIdx + k * innerSize;
+
+                // temporarily store into result->data
+                double temp = exp(ten->data[currIdx] - maxVal);
+                result->data[currIdx] = temp;
+                partitionFuncion += temp;
+            }
+
+            // third loop inside axis: c
+            double invZ = 1.0 / partitionFuncion;
+            for (int k = 0; k < axisSize; ++k)
+            {
+                int currIdx = baseIdx + k * innerSize;
+                result->data[currIdx] *= invZ;
+            }
+        }
+    }
+
+    free(ten->data);
+    free(ten->shape);
+    *ten = *result;
+    free(result);
+    return true;
+}
+
+void tensorReluDerivativeInPlace(tensor *ten)
+{
+    for (int i = 0; i < ten->size; ++i)
+    {
+        ten->data[i] = (ten->data[i] > 0) ? 1.0 : 0;
+    }
+}
+
+void tensorSigmoidDerivativeInPlace(tensor *ten)
+{
+    for (int i = 0; i < ten->size; ++i)
+    {
+        double value = ten->data[i];
+        ten->data[i] = value * (1.0 - value);
+    }
+}
+
+void tensorTanhDerivativeInPlace(tensor *ten)
+{
+    for (int i = 0; i < ten->size; ++i)
+    {
+        double value = ten->data[i];
+        ten->data[i] = 1.0 - value * value;
+    }
+}
+
+// ==========================================================================================
+// HELPERS
+
 // check if the two tensors are the same shape
 bool checkShapeSim(const tensor *ten1, const tensor *ten2)
 {

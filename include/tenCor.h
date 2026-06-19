@@ -87,4 +87,23 @@ tensor *tensorArgmax(const tensor *ten, int axis);
 tensor *tensorReshape(const tensor *ten, int *newShape, int newDim);
 tensor *tensorFlatten(const tensor *ten);
 
+// =========================================================================================================
+// IN-PLACE COUNTERPARTS
+// =========================================================================================================
+bool tensorAddBiasInPlace(tensor *ten, const tensor *bias);
+void tensorReluInPlace(tensor *ten);
+void tensorSigmoidInPlace(tensor *ten);
+void tensorTanhInPlace(tensor *ten);
+bool tensorSoftmaxInPlace(tensor *ten, int axis);
+void tensorReluDerivativeInPlace(tensor *ten);
+void tensorSigmoidDerivativeInPlace(tensor *ten);
+void tensorTanhDerivativeInPlace(tensor *ten);
+bool tensorTransposeInPlace(tensor *ten, const int *axes);
+bool tensorInverseInPlace(tensor *ten);
+bool tensorReshapeInPlace(tensor *ten, int *newShape, int newDim);
+bool tensorFlattenInPlace(tensor *ten);
+bool tensorSumByAxisInPlace(tensor *ten, int axis);
+bool tensorMaxByAxisInPlace(tensor *ten, int axis);
+bool tensorArgmaxInPlace(tensor *ten, int axis);
+
 #endif

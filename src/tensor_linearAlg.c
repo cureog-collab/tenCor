@@ -1,4 +1,5 @@
 #include "../include/tenCor.h"
+#include <stdlib.h>
 
 void matrixMultiplyCore(tensor *result, const double *data1, const double *data2, int M, int K, int N, int batch, bool trans1, bool trans2);
 static void gaussianEliminationCore(tensor *mat, int entryRowIdx, int entryColIdx, int *swapSign);
@@ -331,7 +332,202 @@ void gaussianElimination(tensor *mat, int entryRowIdx, int entryColIdx, int *swa
     gaussianEliminationCore(mat, entryRowIdx, entryColIdx, swapSign);
 }
 
-// helper
+bool tensorTransposeInPlace(tensor *ten, const int *axes)
+{
+    int *resultShape = malloc(ten->dimensions * sizeof(int));
+    if (resultShape == NULL)
+    {
+        printf("Error: Failed to malloc for resultShape!\n");
+        return false;
+    }
+
+    // reshape the tensor
+    for (int i = 0; i < ten->dimensions; ++i)
+    {
+        resultShape[i] = ten->shape[axes[i]];
+    }
+
+    tensor *result = createTensor(ten->dimensions, resultShape);
+    if (result == NULL)
+    {
+        printf("Error: Failed to malloc for result tensor!\n");
+        free(resultShape);
+        return false;
+    }
+    free(resultShape);
+
+    int *newCoords = malloc(ten->dimensions * sizeof(int));
+    if (newCoords == NULL)
+    {
+        printf("Error: Failed to malloc for newCoords!\n");
+        destroyTensor(result);
+        return false;
+    }
+
+    int *oldCoords = malloc(ten->dimensions * sizeof(int));
+    if (oldCoords == NULL)
+    {
+        printf("Error: Failed to malloc for oldCoords!\n");
+        free(newCoords);
+        destroyTensor(result);
+        return false;
+    }
+
+    for (int i = 0; i < result->size; ++i)
+    {
+        // locate addresses in the new tensor
+        // row-major
+        int temp = i;
+        for (int d = result->dimensions - 1; d >= 0; --d)
+        {
+            newCoords[d] = temp % result->shape[d]; // jump this number of steps in dimension d
+            temp /= result->shape[d]; // accumulate jumps at dimension d and bring it onto dimension d - 1
+        }
+
+        // maps back to the address in the old tensor
+        for (int d = 0; d < result->dimensions; ++d)
+        {
+            oldCoords[axes[d]] = newCoords[d];
+        }
+
+        int oldI = 0;
+        int multiplier = 1;
+        for (int d = result->dimensions - 1; d >= 0; --d)
+        {
+            oldI += oldCoords[d] * multiplier; // accumulate jumps
+            multiplier *= ten->shape[d]; // magnitude of a jump at the next dimension, so-called "weight" of each dimension
+        }
+
+        // finally assign to the new tensor's data
+        result->data[i] = ten->data[oldI];
+    }
+
+    free(newCoords);
+    free(oldCoords);
+
+    // assign the input tensor to the result tensor and free the result tensor
+    free(ten->data);
+    free(ten->shape);
+    *ten = *result;
+    free(result);
+    return true;
+}
+
+bool tensorInverseInPlace(tensor *ten)
+{
+        // check if the input tensor is valid
+    // != NULL
+    if (ten == NULL)
+    {
+        printf("Error: Input tensor is NULL!\n");
+        return NULL;
+    }
+    
+    // tensor of rank > 2
+    if (ten->dimensions < 2)
+    {
+        printf("Error: Cannot compute inversion of a rank-%i tensor!\n", ten->dimensions);
+        return NULL;
+    }
+
+    // square matrix
+    int dims = ten->dimensions;
+    int matRows = ten->shape[dims - 2];
+    int matCols = ten->shape[dims - 1];
+    if (matRows != matCols)
+    {
+        printf("Error: Cannot inverse matrix of size %ix%i!\n", matRows, matCols);
+        return NULL;
+    }
+    int matSize = matRows;
+
+    // calculate batch dimensions
+    int totBatch = 1;
+    for (int b = 0; b < dims - 2; ++b)
+    {
+        totBatch *= ten->shape[b];
+    }
+
+    // create augmented matrix
+    int augShape[2] = {matRows, 2 * matCols};
+    tensor *augMat = createTensor(2, augShape);
+    if (augMat == NULL)
+    {
+        printf("Error: Failed to create augmented matrix!\n");
+        return NULL;
+    }
+    int augCols = augMat->shape[1];
+
+    // tensor to hold the result
+    int *resultShape = malloc(dims * sizeof(int));
+    if (resultShape == NULL)
+    {
+        printf("Error: Failed to malloc for resultShape!\n");
+        destroyTensor(augMat);
+        return NULL;
+    }
+    memcpy(resultShape, ten->shape, dims * sizeof(int));
+    tensor *result = createTensor(dims, resultShape);
+    if (result == NULL)
+    {
+        printf("Error: Failed to create result tensor!\n");
+        free(resultShape);
+        destroyTensor(augMat);
+        return NULL;
+    }
+    free(resultShape);
+
+    for (int b  = 0; b < totBatch; ++b)
+    {
+        int offset = b * matSize * matSize;
+        
+        // fill datas for the augmented matrix
+        for (int rowIdx = 0; rowIdx < matSize; ++rowIdx)
+        {
+            // original matrix data
+            for (int colIdx = 0; colIdx < matSize; ++colIdx)
+            {
+                *(augMat->data + rowIdx * augCols + colIdx) = *(ten->data + offset + rowIdx * matSize + colIdx);
+            }
+
+            // augmented identity matrix
+            for (int colIdx = matSize; colIdx < augMat->shape[1]; ++colIdx)
+            {
+                *(augMat->data + rowIdx * augCols + colIdx) = (rowIdx + matCols == colIdx) ? 1 : 0;
+            }
+        }
+
+        // Gauss-Jordan elimination
+        if (!gaussJordanCore(augMat, matSize, augCols, 0))
+        {
+            // skip this batch
+            for (int i = 0; i <matSize * matSize; ++i)
+            {
+                *(result->data + offset + i) = 0;
+            }
+            continue;
+        }
+        // copy data to the result tensor
+        for (int rowIdx = 0; rowIdx < matRows; ++rowIdx)
+        {
+            for (int colIdx = 0; colIdx < matCols; ++colIdx)
+            {
+                *(result->data + offset + rowIdx * matSize + colIdx) = *(augMat->data + rowIdx * augCols + matSize + colIdx);
+            }
+        }
+    }
+
+    destroyTensor(augMat);
+    
+    free(ten->data);
+    free(ten->shape);
+    *ten = *result;
+    free(result);
+    return true;
+}
+
+// ====================================================================================================
+// HELPERS
 void matrixMultiplyCore(tensor *result, const double *data1, const double *data2, int M, int K, int N, int batch, bool trans1, bool trans2)
 {
     // offset
