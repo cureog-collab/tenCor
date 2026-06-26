@@ -709,6 +709,25 @@ void tensorTanhDerivativeInPlace(tensor *ten)
     }
 }
 
+bool tensorAddScalarInPlace(tensor *ten, double scalar)
+{
+    if (ten == NULL)
+    {
+        printf("Error: Cannot add to NULL!\n");
+        return false;
+    }
+
+    int tenSize = ten->size;
+    double *dataPtr = ten->data;
+
+    for (int i = 0; i < tenSize; ++i)
+    {
+        dataPtr[i] += scalar;
+    }
+
+    return true;
+}
+
 // ==========================================================================================
 // HELPERS
 
